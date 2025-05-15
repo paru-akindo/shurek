@@ -36,7 +36,7 @@ upgrade_info = {
         {"level": 2, "time": 15, "cost": 17250},
         {"level": 3, "time": 7.5, "cost": 44650},
     ],
-    "体育館_B": [
+    "計測_B": [
         {"level": 1, "time": 30, "cost": 0},
         {"level": 2, "time": 15, "cost": 17250},
         {"level": 3, "time": 7.5, "cost": 44650},
@@ -49,7 +49,7 @@ upgrade_info = {
         {"level": 5, "time": 12, "cost": 31850},
         {"level": 6, "time": 10, "cost": 58800},
     ],
-    "体育館_A": [
+    "計測_A": [
         {"level": 1, "cost": 0},
         {"level": 2, "cost": 1000},
         {"level": 3, "cost": 8250},
@@ -193,7 +193,7 @@ def get_part_time(part, level):
     return None
 
 def compute_cycle_time(levels):
-    parts = ["受付_A", "受付_B", "体育館_B"]
+    parts = ["受付_A", "受付_B", "計測_B"]
     times = []
     for part in parts:
         t = get_part_time(part, levels.get(part,1))
@@ -207,7 +207,7 @@ def compute_cycle_time(levels):
     return max(times) if times else 60
 
 def get_coin_rate(levels, risk_factor=1.0):
-    gym_level = levels["体育館_A"]
+    gym_level = levels["計測_A"]
     class_hist = get_classroom_hist(levels)
     reward_cycle = expected_cycle_reward_compressed(gym_level, class_hist)
     cycle_time = compute_cycle_time(levels)
@@ -215,7 +215,7 @@ def get_coin_rate(levels, risk_factor=1.0):
     return adjusted_reward / cycle_time
 
 def total_level(levels):
-    tot = levels["受付_A"] + levels["受付_B"] + levels["体育館_A"] + levels["体育館_B"]
+    tot = levels["受付_A"] + levels["受付_B"] + levels["計測_A"] + levels["計測_B"]
     for i in range(1,6):
         tot += levels.get(f"教室_A{i}", 1)
         tot += levels.get(f"教室_B{i}", 1)
@@ -235,8 +235,8 @@ INITIAL_COINS = 159500
 code_to_part = {
     "1a": "受付_A",
     "1b": "受付_B",
-    "2a": "体育館_A",
-    "2b": "体育館_B",
+    "2a": "計測_A",
+    "2b": "計測_B",
     "3a": "教室_A1",
     "4a": "教室_A2",
     "5a": "教室_A3",
@@ -299,8 +299,8 @@ if mode == "シミュレーションモード":
         levels = {
             "受付_A": 1,
             "受付_B": 1,
-            "体育館_A": 1,
-            "体育館_B": 1,
+            "計測_A": 1,
+            "計測_B": 1,
             "教室_A1": 1, "教室_A2": 1, "教室_A3": 1, "教室_A4": 1, "教室_A5": 1,
             "教室_B1": 1, "教室_B2": 1, "教室_B3": 1, "教室_B4": 1, "教室_B5": 1,
         }
@@ -334,7 +334,7 @@ if mode == "シミュレーションモード":
                         break
                 if upgrades_this_minute:
                     upgrade_log.append((current_time, upgrades_this_minute))
-                    current_reward = expected_cycle_reward_compressed(levels["体育館_A"], get_classroom_hist(levels))
+                    current_reward = expected_cycle_reward_compressed(levels["計測_A"], get_classroom_hist(levels))
                     current_cycle_time = compute_cycle_time(levels)
                     current_coin_rate = get_coin_rate(levels, risk_factor_input)
                     hourly_rate = current_coin_rate * 3600
@@ -353,7 +353,7 @@ if mode == "シミュレーションモード":
         st.write("最終状態:", levels)
         st.write("合計レベル:", total_level(levels))
         st.write("最終残高:", math.floor(coin_balance))
-        final_reward = expected_cycle_reward_compressed(levels["体育館_A"], get_classroom_hist(levels))
+        final_reward = expected_cycle_reward_compressed(levels["計測_A"], get_classroom_hist(levels))
         final_cycle_time = compute_cycle_time(levels)
         final_coin_rate = get_coin_rate(levels, risk_factor_input)
         hourly_final = final_coin_rate * 3600
@@ -373,7 +373,7 @@ elif mode == "水準評価モード":
         except Exception as e:
             st.error(f"レベル値変換エラー: {e}")
             st.stop()
-        level_keys_order = ["受付_A", "受付_B", "体育館_A", "体育館_B",
+        level_keys_order = ["受付_A", "受付_B", "計測_A", "計測_B",
                             "教室_A1", "教室_A2", "教室_A3", "教室_A4", "教室_A5",
                             "教室_B1", "教室_B2", "教室_B3", "教室_B4", "教室_B5"]
         levels_dict = dict(zip(level_keys_order, level_values))
@@ -381,7 +381,7 @@ elif mode == "水準評価モード":
         for key in level_keys_order:
             st.write(f"{key}: Lv {levels_dict[key]}")
         st.write("合計レベル:", total_level(levels_dict))
-        gym_level_val = levels_dict["体育館_A"]
+        gym_level_val = levels_dict["計測_A"]
         classroom_hist_val = get_classroom_hist(levels_dict)
         cycle_reward_val = expected_cycle_reward_compressed(gym_level_val, classroom_hist_val)
         cycle_time_val = compute_cycle_time(levels_dict)
