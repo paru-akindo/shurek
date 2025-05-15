@@ -4,6 +4,22 @@ import math
 from collections import defaultdict
 from io import StringIO
 
+# ------------- ヘルパー関数の定義（シミュレーション処理で使用する前に定義） ----------------
+
+def get_local_time(t):
+    local_minutes = t % 1440
+    hour = local_minutes // 60
+    minute = local_minutes % 60
+    return hour, minute
+
+def format_time(t):
+    day = t // 1440 + 1
+    hour, minute = get_local_time(t)
+    return f"Day {day} {hour:02d}:{minute:02d}"
+
+
+# ------------- 以下、元の関数定義や定数など ----------------
+
 # ===================== アップグレードテーブル =====================
 upgrade_info = {
     "受付_A": [
@@ -90,7 +106,6 @@ def get_reward(total_points):
             return coin
     return 0
 
-# -------------------- PMF と畳み込み処理 --------------------
 def pmf_uniform(a, b, n):
     if n == 0:
         return {0: 1.0}
@@ -113,7 +128,6 @@ def merge_pmfs(pmf_list):
         result = convolve_pmfs(result, pmf)
     return result
 
-# -------------------- 期待値計算 --------------------
 expected_reward_cache = {}
 
 def next_upgrade_cost(part, current_level):
@@ -179,12 +193,12 @@ def compute_cycle_time(levels):
     parts = ["受付_A", "受付_B", "体育館_B"]
     times = []
     for part in parts:
-        t = get_part_time(part, levels.get(part, 1))
+        t = get_part_time(part, levels.get(part,1))
         if t is not None:
             times.append(t)
-    for i in range(1, 6):
+    for i in range(1,6):
         key = f"教室_B{i}"
-        t = get_part_time("教室_B", levels.get(key, 1))
+        t = get_part_time("教室_B", levels.get(key,1))
         if t is not None:
             times.append(t)
     return max(times) if times else 60
@@ -205,17 +219,16 @@ def total_level(levels):
     return tot
 
 # ===================== 固定パラメータ =====================
-START_TIME = 600    # Day1 10:00 (分)
-END_TIME = 4200     # Day3 22:00 (分)
+START_TIME = 600    
+END_TIME = 4200     
 bonus_events = {
-    1440: 154200,    # Day2 0:00
-    2040: 5300,      # Day2 10:00
-    2880: 154200,    # Day3 0:00
-    3480: 5300       # Day3 10:00
+    1440: 154200,
+    2040: 5300,
+    2880: 154200,
+    3480: 5300
 }
 INITIAL_COINS = 159500
 
-# -------------------- 部品コード変換辞書 --------------------
 code_to_part = {
     "1a": "受付_A",
     "1b": "受付_B",
@@ -233,22 +246,17 @@ code_to_part = {
     "7b": "教室_B5",
 }
 
-# ===================== Streamlit UI 部分 =====================
-
+# ===================== Streamlit UI ----------------====
 st.title("金貨生成シミュレーション／水準評価アプリ")
 
-# サイドバーでモード選択
 st.sidebar.header("モード選択")
 mode = st.sidebar.radio("モードを選択", ("シミュレーションモード", "水準評価モード"))
-
-# 共通パラメータ
-risk_factor = st.sidebar.number_input("リスク調整係数 (-r) (例: 0.95 で期待値5%%下げる)", min_value=0.0, value=1.0, step=0.01)
-# ※ パーセント記号は %% でエスケープ
+risk_factor_input = st.sidebar.number_input("リスク調整係数 (-r) (例: 0.95 で期待値5%%下げる)", 
+                                            min_value=0.0, value=1.0, step=0.01)
 
 if mode == "シミュレーションモード":
     st.header("シミュレーションモード")
-    # CSV のアップロードの代わりにテキストエリア入力
-    csv_text = st.text_area("CSV 指示を入力してください（ヘッダー: part,target）", height=200, 
+    csv_text = st.text_area("CSV 指示を入力（ヘッダー: part,target）", height=200,
                             value="part,target\n1a,4\n3b,2\n4b,2\n5b,2")
     start_forbid = st.sidebar.number_input("作業禁止開始時刻 (-s) (時)", min_value=0, max_value=23, value=1, step=1)
     end_forbid = st.sidebar.number_input("作業禁止終了時刻 (-e) (時)", min_value=0, max_value=23, value=7, step=1)
@@ -299,8 +307,8 @@ if mode == "シミュレーションモード":
         while current_time <= END_TIME and total_level(levels) < 64:
             if current_time in bonus_events:
                 coin_balance += bonus_events[current_time]
-            rate = get_coin_rate(levels, risk_factor)
-            coin_balance += rate * 60
+            rate = get_coin_rate(levels, risk_factor_input)
+            coin_balance += rate * 60  
             local_hour = (current_time % 1440) // 60
             if not (start_forbid <= local_hour < end_forbid):
                 upgrades_this_minute = []
@@ -325,14 +333,14 @@ if mode == "シミュレーションモード":
                     upgrade_log.append((current_time, upgrades_this_minute))
                     current_reward = expected_cycle_reward_compressed(levels["体育館_A"], get_classroom_hist(levels))
                     current_cycle_time = compute_cycle_time(levels)
-                    current_coin_rate = get_coin_rate(levels, risk_factor)
+                    current_coin_rate = get_coin_rate(levels, risk_factor_input)
                     hourly_rate = current_coin_rate * 3600
                     sim_output.append(f"{format_time(current_time)} （アップグレード後） 金貨期待値: {current_reward:.2f} (1サイクル), サイクルタイム: {current_cycle_time}秒, 1時間あたり生成期待値: {hourly_rate:.2f}")
             if total_level(levels) >= 64:
                 break
             current_time += 1
         if total_level(levels) >= 64:
-            st.success(f"目標達成！合計レベルが64以上になりました。到達時刻: {format_time(current_time)}")
+            st.success(f"目標達成！到達時刻: {format_time(current_time)}")
         else:
             st.warning("終了時刻までに全場所の合計レベル64に到達できませんでした。")
         st.write("アップグレード実績:")
@@ -344,7 +352,7 @@ if mode == "シミュレーションモード":
         st.write("最終残高:", math.floor(coin_balance))
         final_reward = expected_cycle_reward_compressed(levels["体育館_A"], get_classroom_hist(levels))
         final_cycle_time = compute_cycle_time(levels)
-        final_coin_rate = get_coin_rate(levels, risk_factor)
+        final_coin_rate = get_coin_rate(levels, risk_factor_input)
         hourly_final = final_coin_rate * 3600
         st.markdown(f"**【最終設定の詳細】** 1サイクルあたり金貨期待値: {final_reward:.2f}, サイクルタイム: {final_cycle_time}秒, 1時間あたり生成期待値: {hourly_final:.2f}")
         
@@ -374,20 +382,9 @@ elif mode == "水準評価モード":
         classroom_hist_val = get_classroom_hist(levels_dict)
         cycle_reward_val = expected_cycle_reward_compressed(gym_level_val, classroom_hist_val)
         cycle_time_val = compute_cycle_time(levels_dict)
-        coin_rate_val = get_coin_rate(levels_dict, risk_factor)
+        coin_rate_val = get_coin_rate(levels_dict, risk_factor_input)
         hourly_rate_val = coin_rate_val * 3600
         st.markdown("**【指定された構成の詳細】**")
         st.write(f"1サイクルあたりの金貨期待値: {cycle_reward_val:.2f}")
         st.write(f"サイクルタイム: {cycle_time_val}秒")
         st.write(f"1時間あたり生成期待値: {hourly_rate_val:.2f}")
-
-def get_local_time(t):
-    local_minutes = t % 1440
-    hour = local_minutes // 60
-    minute = local_minutes % 60
-    return hour, minute
-
-def format_time(t):
-    day = t // 1440 + 1
-    hour, minute = get_local_time(t)
-    return f"Day {day} {hour:02d}:{minute:02d}"
