@@ -270,7 +270,7 @@ def main():
     st.markdown("### 部品レベル入力 (2行×7列)")
     with st.form("level_form"):
         cols = st.columns(7)
-        headers = ["受付", "腕前審査", "料理", "包丁", "製菓", "調理", "盛付"]
+        headers = ["1", "2", "3", "4", "5", "6", "7"]
         for col, h in zip(cols, headers):
             col.markdown(f"**{h}**")
 
