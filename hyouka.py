@@ -270,7 +270,7 @@ def main():
     st.markdown("### 部品レベル入力 (2行×7列)")
     with st.form("level_form"):
         cols = st.columns(7)
-        headers = ["1", "2", "3", "4", "5", "6", "7"]
+        headers = ["受付", "腕前審査", "料理", "包丁", "製菓", "調理", "盛付"]
         for col, h in zip(cols, headers):
             col.markdown(f"**{h}**")
 
@@ -298,11 +298,11 @@ def main():
         return
 
     # 入力値を 2×7 テーブルで表示
-    rows = ["a", "b"]
-    headers = ["1", "2", "3", "4", "5", "6", "7"]
+    rows = ["教師", "席"]
+    headers = ["受付", "腕前審査", "料理", "包丁", "製菓", "調理", "盛付"]
     data = [[level_inputs[f"{h}{r}"] for h in headers] for r in rows]
     df_input = pd.DataFrame(data, index=rows, columns=headers)
-    st.markdown("#### 入力レベル")
+    st.markdown("#### 入力内容")
     st.table(df_input)
 
     # 評価実行
@@ -311,9 +311,9 @@ def main():
 
     st.markdown("## 評価結果")
     st.write(f"- 合計レベル: {result.total_level}")
-    st.write(f"- 1サイクルあたり金貨期待値: {result.cycle_reward:.2f}")
+    st.write(f"- 1料理人あたり玉龍幣期待値: {result.cycle_reward:.2f}")
     st.write(f"- サイクルタイム: {result.cycle_time} 秒")
-    st.write(f"- 1時間あたり生成期待値: {result.hourly_rate:.2f}")
+    st.write(f"- 1時間あたり玉龍幣期待値: {result.hourly_rate:.2f}")
 
     # 報酬分布を表で表示（名前でインデックス）
     hist = get_classroom_hist(lvl_dict)
