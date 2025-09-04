@@ -298,8 +298,8 @@ def main():
         return
 
     # 入力値を 2×7 テーブルで表示
-    rows = ["教師", "席"]
-    headers = ["受付", "腕前審査", "料理", "包丁", "製菓", "調理", "盛付"]
+    rows = ["a", "b"]
+    headers = ["1", "2", "3", "4", "5", "6", "7"]
     data = [[level_inputs[f"{h}{r}"] for h in headers] for r in rows]
     df_input = pd.DataFrame(data, index=rows, columns=headers)
     st.markdown("#### 入力内容")
