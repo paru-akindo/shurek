@@ -1,16 +1,19 @@
 # main.py
 """
-金貨生成シミュレーション／水準評価モード
-このファイルひとつで、Streamlit UI と評価ロジックを内包しています。
+水準評価モード専用アプリケーション
+- 部品レベル入力を 2行×7列 のプルダウンで行う
+- 各サイクルで得られる reward_table の報酬値別確率分布を表示
 """
 
 import streamlit as st
+import pandas as pd
 from dataclasses import dataclass
 from collections import defaultdict
 from typing import Dict, Tuple, List
 
 # === 定数・テーブル定義 ===
 
+# アップグレード情報
 upgrade_info = {
     "受付_A": [
         {"level": 1, "time": 45, "cost": 0},
@@ -58,6 +61,7 @@ upgrade_info = {
     ],
 }
 
+# ジムA のレベルごとのポイント範囲と２倍確率
 gym_A_levels = {
     1: ((2, 8), 0.15),
     2: ((7, 13), 0.20),
@@ -69,6 +73,7 @@ gym_A_levels = {
     8: ((65, 85), 0.50),
 }
 
+# 教室A のレベルごとのポイント範囲
 class_A_levels = {
     1: (7, 13),
     2: (10, 20),
@@ -79,6 +84,7 @@ class_A_levels = {
     7: (97, 133),
 }
 
+# 報酬テーブル (合計ポイント低–高, 金貨)
 reward_table = [
     (0, 79, 2),
     (80, 139, 5),
@@ -91,7 +97,17 @@ reward_table = [
     (820, 1039, 50),
 ]
 
-# === データモデル ===
+# 部品コード→内部パーツ名マッピング
+code_to_part = {
+    "1a": "受付_A", "1b": "受付_B",
+    "2a": "計測_A", "2b": "計測_B",
+    "3a": "教室_A1", "4a": "教室_A2", "5a": "教室_A3",
+    "6a": "教室_A4", "7a": "教室_A5",
+    "3b": "教室_B1", "4b": "教室_B2", "5b": "教室_B3",
+    "6b": "教室_B4", "7b": "教室_B5",
+}
+
+# === データクラス ===
 
 @dataclass
 class EvaluationParams:
@@ -106,13 +122,7 @@ class EvaluationResult:
     coin_rate: float
     hourly_rate: float
 
-# === 評価ロジック（純粋関数群） ===
-
-def get_reward(total_points: int) -> int:
-    for low, high, coin in reward_table:
-        if low <= total_points <= high:
-            return coin
-    return 0
+# === 純粋関数：PMF関連 ===
 
 def convolve_pmfs(p1: Dict[int, float], p2: Dict[int, float]) -> Dict[int, float]:
     res = defaultdict(float)
@@ -135,6 +145,8 @@ def merge_pmfs(pmfs: List[Dict[int, float]]) -> Dict[int, float]:
     for pmf in pmfs:
         res = convolve_pmfs(res, pmf)
     return res
+
+# === 純粋関数：サイクル期待値・レート計算 ===
 
 _expected_cache: Dict[Tuple[int, Tuple[int, ...]], float] = {}
 
@@ -164,40 +176,37 @@ def expected_cycle_reward_compressed(
     (gmin, gmax), p_double = gym_A_levels[gym_level]
     gym_pmf = {x: 1.0 / (gmax - gmin + 1) for x in range(gmin, gmax + 1)}
     class_pmf = combine_classroom_distribution(class_hist)
-    total = convolve_pmfs(gym_pmf, class_pmf)
+    total_pmf = convolve_pmfs(gym_pmf, class_pmf)
 
     exp_val = 0.0
-    for pts, prob in total.items():
-        exp_val += get_reward(pts) * (1 + p_double) * prob
+    for pts, prob in total_pmf.items():
+        # 合計 pts に対応する報酬を取得
+        coin = next((c for low, high, c in reward_table if low <= pts <= high), 0)
+        exp_val += coin * (1 + p_double) * prob
 
     _expected_cache[key] = exp_val
     return exp_val
 
-def get_part_time(part: str, level: int):
-    lst = upgrade_info.get(part, [])
-    for item in lst:
-        if item["level"] == level:
-            return item.get("time")
-    return None
-
 def compute_cycle_time(levels: Dict[str, int]) -> int:
-    times = []
+    times: List[float] = []
     for part in ["受付_A", "受付_B", "計測_B"]:
-        t = get_part_time(part, levels.get(part, 1))
+        t = next((item["time"] for item in upgrade_info[part]
+                  if item["level"] == levels.get(part, 1)), None)
         if t is not None:
             times.append(t)
     for i in range(1, 6):
-        t = get_part_time("教室_B", levels.get(f"教室_B{i}", 1))
+        t = next((item["time"] for item in upgrade_info["教室_B"]
+                  if item["level"] == levels.get(f"教室_B{i}", 1)), None)
         if t is not None:
             times.append(t)
-    return max(times) if times else 60
+    return int(max(times)) if times else 60
 
 def get_coin_rate(levels: Dict[str, int], risk: float) -> float:
     gym_lv = levels["計測_A"]
     hist = get_classroom_hist(levels)
-    reward = expected_cycle_reward_compressed(gym_lv, hist)
+    cycle_reward = expected_cycle_reward_compressed(gym_lv, hist)
     cycle_time = compute_cycle_time(levels)
-    return reward * risk / cycle_time
+    return cycle_reward * risk / cycle_time
 
 def total_level(levels: Dict[str, int]) -> int:
     keys = (
@@ -207,75 +216,120 @@ def total_level(levels: Dict[str, int]) -> int:
     )
     return sum(levels.get(k, 1) for k in keys)
 
-def evaluate(params: EvaluationParams) -> EvaluationResult:
-    lv = params.levels
-    rf = params.risk_factor
+# === 純粋関数：報酬分布計算 ===
 
-    tot_lv = total_level(lv)
-    cy_rew = expected_cycle_reward_compressed(lv["計測_A"], get_classroom_hist(lv))
-    cy_time = compute_cycle_time(lv)
-    coin_rt = get_coin_rate(lv, rf)
-    hourly_rt = coin_rt * 3600
+def reward_distribution(
+    gym_level: int,
+    class_hist: Tuple[int, ...]
+) -> Dict[int, float]:
+    """
+    reward_table にある金貨量ごとの発生確率分布を返す。
+    """
+    (gmin, gmax), p_double = gym_A_levels[gym_level]
+    gym_pmf = {x: 1.0 / (gmax - gmin + 1) for x in range(gmin, gmax + 1)}
+    class_pmf = combine_classroom_distribution(class_hist)
+    total_pmf = convolve_pmfs(gym_pmf, class_pmf)
 
-    return EvaluationResult(
-        total_level=tot_lv,
-        cycle_reward=cy_rew,
-        cycle_time=cy_time,
-        coin_rate=coin_rt,
-        hourly_rate=hourly_rt
-    )
+    dist: Dict[int, float] = defaultdict(float)
+    for pts, prob in total_pmf.items():
+        coin = next((c for low, high, c in reward_table if low <= pts <= high), 0)
+        dist[coin] += prob
+    # キー昇順で返却
+    return dict(sorted(dist.items()))
 
 # === 入力パースヘルパー ===
 
 def parse_levels_input(text: str) -> Dict[str, int]:
-    parts_order = [
-        "受付_A", "受付_B", "計測_A", "計測_B",
-        "教室_A1", "教室_A2", "教室_A3", "教室_A4", "教室_A5",
-        "教室_B1", "教室_B2", "教室_B3", "教室_B4", "教室_B5",
+    codes = [
+        "1a", "1b", "2a", "2b", "3a", "4a", "5a", "6a", "7a",
+        "3b", "4b", "5b", "6b", "7b"
     ]
-    items = [x.strip() for x in text.split(",")]
-    if len(items) != len(parts_order):
-        raise ValueError(f"14個の数値が必要です (現在: {len(items)})")
-    levels = {}
-    for key, val in zip(parts_order, items):
+    parts_order = [code_to_part[c] for c in codes]
+    values = [x.strip() for x in text.split(",")]
+    if len(values) != len(codes):
+        raise ValueError(f"14個の値が必要です (現在: {len(values)})")
+    result: Dict[str, int] = {}
+    for code, val in zip(codes, values):
         if not val.isdigit():
-            raise ValueError(f"数値変換エラー: {val}")
-        levels[key] = int(val)
-    return levels
+            raise ValueError(f"数値でない入力: {val}")
+        part = code_to_part[code]
+        result[part] = int(val)
+    return result
 
-# === Streamlit UI ===
+# === メインストリームリット UI ===
 
 def main():
-    st.title("金貨生成シミュレーション／水準評価モード")
+    st.title("水準評価モード（表形式入力＋報酬分布）")
 
+    # リスク調整係数入力
     risk = st.sidebar.number_input(
-        "リスク調整係数 (-r) (例: 0.95)", min_value=0.0, value=1.0, step=0.01
+        "リスク調整係数 (-r)", min_value=0.0, max_value=2.0, value=1.0, step=0.01
     )
 
-    st.markdown(
-        "各部品レベルをカンマ区切りで入力してください\n"
-        "順序：1a,1b,2a,2b,3a,4a,5a,6a,7a,3b,4b,5b,6b,7b"
-    )
-    user_input = st.text_input(
-        "部品レベル (例: 1,1,2,2,3,3,3,3,3,1,1,1,1,1)"
-    )
+    st.markdown("### 部品レベル入力 (2行×7列)")
+    with st.form("level_form"):
+        cols = st.columns(7)
+        headers = ["1", "2", "3", "4", "5", "6", "7"]
+        # 列ヘッダー
+        for col, h in zip(cols, headers):
+            col.markdown(f"**{h}**")
 
-    if st.button("評価実行"):
-        try:
-            lv_dict = parse_levels_input(user_input)
-        except ValueError as err:
-            st.error(f"入力エラー: {err}")
-            st.stop()
+        # プルダウン入力：行 a / 行 b
+        level_inputs: Dict[str, int] = {}
+        for row in ("a", "b"):
+            for col, h in zip(cols, headers):
+                code = f"{h}{row}"
+                part = code_to_part[code]
+                # 部品種別に応じて最大レベル取得
+                if part.startswith("教室_A"):
+                    key = "教室_A"
+                elif part.startswith("教室_B"):
+                    key = "教室_B"
+                else:
+                    key = part
+                max_lv = max(item["level"] for item in upgrade_info[key])
+                level = col.selectbox(
+                    label=f"{code}", options=list(range(1, max_lv + 1)),
+                    index=0, key=code
+                )
+                level_inputs[code] = level
 
-        st.write("指定されたレベル構成:", lv_dict)
+        submitted = st.form_submit_button("評価実行")
 
-        result = evaluate(EvaluationParams(levels=lv_dict, risk_factor=risk))
+    if not submitted:
+        return
 
-        st.markdown("**評価結果**")
-        st.write(f"合計レベル: {result.total_level}")
-        st.write(f"1サイクルあたり金貨期待値: {result.cycle_reward:.2f}")
-        st.write(f"サイクルタイム: {result.cycle_time}秒")
-        st.write(f"1時間あたり生成期待値: {result.hourly_rate:.2f}")
+    # プルダウンから部品名→レベル辞書作成
+    lvl_dict: Dict[str, int] = {
+        code_to_part[c]: level_inputs[c]
+        for c in level_inputs
+    }
+
+    st.markdown("#### 指定レベル構成")
+    st.json(lvl_dict)
+
+    # 評価実行
+    params = EvaluationParams(levels=lvl_dict, risk_factor=risk)
+    result = evaluate(params)
+
+    st.markdown("## 評価結果")
+    st.write(f"- 合計レベル: {result.total_level}")
+    st.write(f"- 1サイクルあたり金貨期待値: {result.cycle_reward:.2f}")
+    st.write(f"- サイクルタイム: {result.cycle_time} 秒")
+    st.write(f"- 1時間あたり生成期待値: {result.hourly_rate:.2f}")
+
+    # 報酬テーブル分布を計算・表示
+    hist = get_classroom_hist(lvl_dict)
+    dist = reward_distribution(lvl_dict["計測_A"], hist)
+
+    st.markdown("## 報酬テーブル分布")
+    df_dist = pd.DataFrame.from_dict(dist, orient="index", columns=["確率"])
+    df_dist.index.name = "金貨量"
+    df_dist["確率(%)"] = (df_dist["確率"] * 100).round(2)
+    st.table(df_dist)
+
+    st.markdown("### 確率分布グラフ")
+    st.bar_chart(df_dist["確率"])
 
 if __name__ == "__main__":
     main()
