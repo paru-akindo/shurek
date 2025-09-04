@@ -13,7 +13,6 @@ from typing import Dict, Tuple, List
 
 # === 定数・テーブル定義 ===
 
-# アップグレード情報
 upgrade_info = {
     "受付_A": [
         {"level": 1, "time": 45, "cost": 0},
@@ -61,7 +60,6 @@ upgrade_info = {
     ],
 }
 
-# ジムA のレベルごとのポイント範囲と２倍確率
 gym_A_levels = {
     1: ((2, 8), 0.15),
     2: ((7, 13), 0.20),
@@ -73,7 +71,6 @@ gym_A_levels = {
     8: ((65, 85), 0.50),
 }
 
-# 教室A のレベルごとのポイント範囲
 class_A_levels = {
     1: (7, 13),
     2: (10, 20),
@@ -84,7 +81,6 @@ class_A_levels = {
     7: (97, 133),
 }
 
-# 報酬テーブル (合計ポイント低–高, 金貨)
 reward_table = [
     (0, 79, 2),
     (80, 139, 5),
@@ -97,7 +93,6 @@ reward_table = [
     (820, 1039, 50),
 ]
 
-# 部品コード→内部パーツ名マッピング
 code_to_part = {
     "1a": "受付_A", "1b": "受付_B",
     "2a": "計測_A", "2b": "計測_B",
@@ -222,9 +217,6 @@ def reward_distribution(
     gym_level: int,
     class_hist: Tuple[int, ...]
 ) -> Dict[int, float]:
-    """
-    reward_table にある金貨量ごとの発生確率分布を返す。
-    """
     (gmin, gmax), p_double = gym_A_levels[gym_level]
     gym_pmf = {x: 1.0 / (gmax - gmin + 1) for x in range(gmin, gmax + 1)}
     class_pmf = combine_classroom_distribution(class_hist)
@@ -234,7 +226,6 @@ def reward_distribution(
     for pts, prob in total_pmf.items():
         coin = next((c for low, high, c in reward_table if low <= pts <= high), 0)
         dist[coin] += prob
-    # キー昇順で返却
     return dict(sorted(dist.items()))
 
 # === 入力パースヘルパー ===
@@ -244,7 +235,7 @@ def parse_levels_input(text: str) -> Dict[str, int]:
         "1a", "1b", "2a", "2b", "3a", "4a", "5a", "6a", "7a",
         "3b", "4b", "5b", "6b", "7b"
     ]
-    parts_order = [code_to_part[c] for c in codes]
+    parts = [code_to_part[c] for c in codes]
     values = [x.strip() for x in text.split(",")]
     if len(values) != len(codes):
         raise ValueError(f"14個の値が必要です (現在: {len(values)})")
@@ -252,16 +243,34 @@ def parse_levels_input(text: str) -> Dict[str, int]:
     for code, val in zip(codes, values):
         if not val.isdigit():
             raise ValueError(f"数値でない入力: {val}")
-        part = code_to_part[code]
-        result[part] = int(val)
+        result[code_to_part[code]] = int(val)
     return result
 
-# === メインストリームリット UI ===
+# === 評価関数 ===
+
+def evaluate(params: EvaluationParams) -> EvaluationResult:
+    lv = params.levels
+    rf = params.risk_factor
+
+    tot_lv = total_level(lv)
+    cy_rew = expected_cycle_reward_compressed(lv["計測_A"], get_classroom_hist(lv))
+    cy_time = compute_cycle_time(lv)
+    coin_rt = cy_rew * rf / cy_time
+    hourly_rt = coin_rt * 3600
+
+    return EvaluationResult(
+        total_level=tot_lv,
+        cycle_reward=cy_rew,
+        cycle_time=cy_time,
+        coin_rate=coin_rt,
+        hourly_rate=hourly_rt,
+    )
+
+# === Streamlit UI ===
 
 def main():
     st.title("水準評価モード（表形式入力＋報酬分布）")
 
-    # リスク調整係数入力
     risk = st.sidebar.number_input(
         "リスク調整係数 (-r)", min_value=0.0, max_value=2.0, value=1.0, step=0.01
     )
@@ -270,17 +279,14 @@ def main():
     with st.form("level_form"):
         cols = st.columns(7)
         headers = ["1", "2", "3", "4", "5", "6", "7"]
-        # 列ヘッダー
         for col, h in zip(cols, headers):
             col.markdown(f"**{h}**")
 
-        # プルダウン入力：行 a / 行 b
         level_inputs: Dict[str, int] = {}
         for row in ("a", "b"):
             for col, h in zip(cols, headers):
                 code = f"{h}{row}"
                 part = code_to_part[code]
-                # 部品種別に応じて最大レベル取得
                 if part.startswith("教室_A"):
                     key = "教室_A"
                 elif part.startswith("教室_B"):
@@ -288,10 +294,9 @@ def main():
                 else:
                     key = part
                 max_lv = max(item["level"] for item in upgrade_info[key])
-                level = col.selectbox(
-                    label=f"{code}", options=list(range(1, max_lv + 1)),
-                    index=0, key=code
-                )
+                level = col.selectbox(label=code,
+                                      options=list(range(1, max_lv + 1)),
+                                      index=0, key=code)
                 level_inputs[code] = level
 
         submitted = st.form_submit_button("評価実行")
@@ -299,16 +304,10 @@ def main():
     if not submitted:
         return
 
-    # プルダウンから部品名→レベル辞書作成
-    lvl_dict: Dict[str, int] = {
-        code_to_part[c]: level_inputs[c]
-        for c in level_inputs
-    }
-
+    lvl_dict = {code_to_part[c]: level_inputs[c] for c in level_inputs}
     st.markdown("#### 指定レベル構成")
     st.json(lvl_dict)
 
-    # 評価実行
     params = EvaluationParams(levels=lvl_dict, risk_factor=risk)
     result = evaluate(params)
 
@@ -318,7 +317,6 @@ def main():
     st.write(f"- サイクルタイム: {result.cycle_time} 秒")
     st.write(f"- 1時間あたり生成期待値: {result.hourly_rate:.2f}")
 
-    # 報酬テーブル分布を計算・表示
     hist = get_classroom_hist(lvl_dict)
     dist = reward_distribution(lvl_dict["計測_A"], hist)
 
