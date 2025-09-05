@@ -276,7 +276,7 @@ def main():
     st.markdown("### 部品レベル入力 (2行×7列)")
     with st.form("level_form"):
         cols = st.columns(7)
-        # 列ヘッダー
+        # 列ヘッダー（表示用ラベル）
         for col, lbl in zip(cols, col_labels):
             col.markdown(f"**{lbl}**")
 
@@ -286,6 +286,7 @@ def main():
             for col, num in zip(cols, col_nums):
                 code = f"{num}{rcode}"
                 part = code_to_part[code]
+                # 内部テーブルキー選択
                 if part.startswith("教室_A"):
                     key = "教室_A"
                 elif part.startswith("教室_B"):
@@ -293,15 +294,18 @@ def main():
                 else:
                     key = part
                 max_lv = max(it["level"] for it in upgrade_info[key])
+                # ← ラベルを空文字に & collapsed で非表示に
                 lvl = col.selectbox(
-                    label=code,
+                    "",                          # ラベルを空に
                     options=list(range(1, max_lv+1)),
                     index=0,
-                    key=code
+                    key=code,                    # internal key はそのまま
+                    label_visibility="collapsed" # ラベル非表示
                 )
                 level_inputs[code] = lvl
 
         submitted = st.form_submit_button("評価実行")
+
 
     if not submitted:
         return
