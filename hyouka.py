@@ -260,7 +260,7 @@ def evaluate(params: EvaluationParams) -> EvaluationResult:
 # === Streamlit UI ===
 
 def main():
-    st.title("水準評価モード（表形式入力＋報酬分布）")
+    st.title("玉龍幣シミュ")
 
     # リスク調整係数
     risk = st.sidebar.number_input(
@@ -273,7 +273,7 @@ def main():
     col_labels  = ["受付","腕前審査","料理","包丁","製菓","調理","盛付"]
     col_nums    = list(range(1, 8))
 
-    st.markdown("### 部品レベル入力 (2行×7列)")
+    st.markdown("### レベル入力")
     with st.form("level_form"):
         cols = st.columns(7)
         # 列ヘッダー（表示用ラベル）
@@ -316,7 +316,7 @@ def main():
         for rcode in row_codes
     ]
     df_input = pd.DataFrame(data, index=row_labels, columns=col_labels)
-    st.markdown("#### 入力レベル")
+    st.markdown("#### 入力内容")
     st.table(df_input)
 
     # 評価実行
@@ -325,9 +325,9 @@ def main():
 
     st.markdown("## 評価結果")
     st.write(f"- 合計レベル: {result.total_level}")
-    st.write(f"- 1サイクルあたり金貨期待値: {result.cycle_reward:.2f}")
+    st.write(f"- 料理人あたり玉龍幣期待値: {result.cycle_reward:.2f}")
     st.write(f"- サイクルタイム: {result.cycle_time} 秒")
-    st.write(f"- 1時間あたり生成期待値: {result.hourly_rate:.2f}")
+    st.write(f"- 1時間あたり玉龍幣期待値: {result.hourly_rate:.2f}")
 
     # 報酬分布を表で表示（名前をインデックス）
     hist = get_classroom_hist(lvl_dict)
@@ -335,7 +335,7 @@ def main():
     names = [reward_names.get(c, str(c)) for c in dist.keys()]
     probs = [round(p*100, 2) for p in dist.values()]
     df_dist = pd.DataFrame({"確率(%)": probs}, index=names)
-    st.markdown("## 報酬テーブル分布")
+    st.markdown("## 料理人分布")
     st.table(df_dist)
 
 if __name__ == "__main__":
