@@ -3,8 +3,8 @@
 水準評価モード専用アプリケーション
 - 部品レベル入力を 2行×7列 のプルダウンで行う
 - 各サイクルで得られる reward_table の報酬名別確率分布を表で表示
-- 次に上げたい部品と現在の玉龍幣残高を入力すると、
-  到達予定時刻と残り時間、レベルアップ後の期待値を表示
+- 次に上げたい部品と現在の玉龍幣残高を評価前に入力できるようにした
+  （評価実行ボタンを押すと、評価結果と到達予定時刻・残り時間・アップ後期待値を表示）
 """
 
 import streamlit as st
@@ -265,7 +265,6 @@ def evaluate(params: EvaluationParams) -> EvaluationResult:
 # === レベルアップ試算用関数 ===
 
 def get_upgrade_cost(part: str, current_level: int) -> Optional[int]:
-    # 部品名が "教室_A1" のような場合は "教室_A" テーブルを参照する
     if part.startswith("教室_A"):
         key = "教室_A"
     elif part.startswith("教室_B"):
@@ -304,7 +303,7 @@ def main():
     col_labels  = ["受付","腕前審査","料理","包丁","製菓","調理","盛付"]
     col_nums    = list(range(1, 8))
 
-    st.markdown("### レベル入力")
+    st.markdown("### レベル入力（ここで次に上げる部品と所持玉龍幣も指定）")
     with st.form("level_form"):
         # 列ヘッダー
         header_cols = st.columns(7)
@@ -320,7 +319,6 @@ def main():
                 code = f"{num}{rcode}"
                 part = code_to_part.get(code)
                 if part is None:
-                    # 万が一マッピングが無ければデフォルトを設定
                     part = "教室_A1"
                 if part.startswith("教室_A"):
                     key = "教室_A"
@@ -329,7 +327,6 @@ def main():
                 else:
                     key = part
                 max_lv = max(it.get("level", 1) for it in upgrade_info[key])
-                # selectbox の index は 0 ベースだがレベルは 1 から始まるので index=0 を指定
                 lvl = col.selectbox(
                     "",
                     options=list(range(1, max_lv+1)),
@@ -338,6 +335,12 @@ def main():
                     label_visibility="collapsed"
                 )
                 level_inputs[code] = lvl
+
+        # ここで「次に上げたい部品」と「現在の玉龍幣残高」をフォーム内で入力できるようにする
+        # 表示順を安定させるためコード順で部品名リストを作成
+        part_options = [code_to_part[c] for c in sorted(level_inputs.keys())]
+        part_choice = st.selectbox("次に上げたい部品", options=part_options, index=0, key="part_to_upgrade")
+        current_coins = st.number_input("現在の玉龍幣残高", min_value=0, value=0, step=100, key="current_coins")
 
         submitted = st.form_submit_button("評価実行")
 
@@ -354,9 +357,8 @@ def main():
     st.table(df_input)
 
     # 評価実行
-    # code_to_part の値をキーにした辞書を作る（教室_A1 などをそのままキーにする）
+    # lvl_dict のキーは部品名（例: "教室_A1"）になる
     lvl_dict = {code_to_part[c]: level_inputs[c] for c in level_inputs}
-    # ただし evaluate 等は "教室_A" テーブルを参照するため、教室_A1..A5 はそのまま使えるようにしている
     result = evaluate(EvaluationParams(levels=lvl_dict, risk_factor=risk))
 
     st.markdown("## 評価結果")
@@ -365,8 +367,7 @@ def main():
     st.write(f"- サイクルタイム: {result.cycle_time} 秒")
     st.write(f"- 1時間あたり玉龍幣期待値: {result.hourly_rate:.2f}")
 
-    # 報酬分布を表で表示（名前をインデックス）
-    # get_classroom_hist は "教室_A1..A5" を参照する想定
+    # 報酬分布
     hist = get_classroom_hist(lvl_dict)
     dist = reward_distribution(lvl_dict.get("計測_A", 1), hist)
     names = [reward_names.get(c, str(c)) for c in dist.keys()]
@@ -375,11 +376,10 @@ def main():
     st.markdown("## 料理人分布")
     st.table(df_dist)
 
-    # 次のレベルアップ試算
-    st.markdown("## 次のレベルアップ試算")
-    # 部品選択肢は現在の lvl_dict のキー（部品名）から選べるようにする
-    part_to_upgrade = st.selectbox("次に上げたい部品", list(lvl_dict.keys()))
-    current_coins = st.number_input("現在の玉龍幣残高", min_value=0, value=0)
+    # 次のレベルアップ試算（フォーム内で選択した値を使う）
+    st.markdown("## 次のレベルアップ試算（フォームで指定済み）")
+    part_to_upgrade = part_choice
+    current_coins = int(current_coins)
 
     cur_level = lvl_dict.get(part_to_upgrade, 1)
     cost = get_upgrade_cost(part_to_upgrade, cur_level)
