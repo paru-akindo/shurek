@@ -5,6 +5,7 @@
 - 各サイクルで得られる reward_table の報酬名別確率分布を表で表示
 - 次に上げたい部品と現在の玉龍幣残高を評価前に入力できるようにした
   （評価実行ボタンを押すと、評価結果と到達予定時刻・残り時間・アップ後期待値を表示）
+- 到達予定時刻は日本時間（JST）で表示します
 """
 
 import streamlit as st
@@ -12,7 +13,7 @@ import pandas as pd
 from dataclasses import dataclass
 from collections import defaultdict
 from typing import Dict, Tuple, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import math
 
 # === 定数・テーブル定義 ===
@@ -284,8 +285,12 @@ def accumulate_minutes_ceiled(current_coins: int, needed_coins: int, coin_rate_p
     wait_seconds = deficit / coin_rate_per_sec
     return math.ceil(wait_seconds / 60)
 
+# JST timezone
+JST = timezone(timedelta(hours=9))
+
 def arrival_time_from_minutes(minutes_ceiled: int) -> datetime:
-    return datetime.now() + timedelta(minutes=minutes_ceiled)
+    # return timezone-aware datetime in JST
+    return datetime.now(timezone.utc).astimezone(JST) + timedelta(minutes=minutes_ceiled)
 
 # === Streamlit UI ===
 
@@ -337,9 +342,34 @@ def main():
                 level_inputs[code] = lvl
 
         # ここで「次に上げたい部品」と「現在の玉龍幣残高」をフォーム内で入力できるようにする
-        # 表示順を安定させるためコード順で部品名リストを作成
-        part_options = [code_to_part[c] for c in sorted(level_inputs.keys())]
-        part_choice = st.selectbox("次に上げたい部品", options=part_options, index=0, key="part_to_upgrade")
+        # 表示ラベル（例: "受付_教師"）と内部キー（例: "受付_A"）を分離して扱う
+        row_label_map = {"a": "教師", "b": "席"}
+        display_map: Dict[str, str] = {}
+        part_options_internal: List[str] = []
+
+        # sorted(level_inputs.keys()) でコード順に並べる（"1a","1b","2a",...）
+        for code in sorted(level_inputs.keys()):
+            internal = code_to_part.get(code)
+            if internal is None:
+                continue
+            col_index = int(code[0]) - 1  # 0-based
+            col_label = col_labels[col_index]
+            row_code = code[1]
+            row_label = row_label_map.get(row_code, row_code)
+            display_label = f"{col_label}_{row_label}"  # 例: "受付_教師"
+            # 内部キーが既に追加されていなければ追加（教室_A1..A5 は個別に扱う）
+            if internal not in part_options_internal:
+                part_options_internal.append(internal)
+                display_map[internal] = display_label
+
+        # selectbox: options は内部キーのリスト、format_func で表示を差し替える
+        part_choice_internal = st.selectbox(
+            "次に上げたい部品",
+            options=part_options_internal,
+            index=0,
+            format_func=lambda x: display_map.get(x, x),
+            key="part_to_upgrade"
+        )
         current_coins = st.number_input("現在の玉龍幣残高", min_value=0, value=0, step=100, key="current_coins")
 
         submitted = st.form_submit_button("評価実行")
@@ -378,7 +408,7 @@ def main():
 
     # 次のレベルアップ試算（フォーム内で選択した値を使う）
     st.markdown("## 次のレベルアップ試算（フォームで指定済み）")
-    part_to_upgrade = part_choice
+    part_to_upgrade = part_choice_internal
     current_coins = int(current_coins)
 
     cur_level = lvl_dict.get(part_to_upgrade, 1)
@@ -393,9 +423,10 @@ def main():
             st.warning("現在の獲得速度では到達予定時刻を計算できません（獲得速度が 0 の可能性）。")
         else:
             arrival_dt = arrival_time_from_minutes(minutes_ceiled)
+            # arrival_dt は JST の tz-aware datetime
+            st.write(f"- 到達予定時刻（日本時間）: {arrival_dt.strftime('%Y-%m-%d %H:%M')}")
             remaining_hours = minutes_ceiled // 60
             remaining_minutes = minutes_ceiled % 60
-            st.write(f"- 到達予定時刻: {arrival_dt.strftime('%Y-%m-%d %H:%M')}")
             st.write(f"- 残り時間: {remaining_hours}時間{remaining_minutes}分")
 
             # レベルアップ後の期待値（仮想的に +1 して再評価）
