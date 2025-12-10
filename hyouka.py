@@ -82,13 +82,17 @@ def main():
 
     st.markdown("### レベル入力")
     with st.form("level_form"):
-        cols = st.columns(7)
-        for col, lbl in zip(cols, col_labels):
+        # 列ヘッダー
+        header_cols = st.columns(7)
+        for col, lbl in zip(header_cols, col_labels):
             col.markdown(f"**{lbl}**")
 
         level_inputs: Dict[str, int] = {}
-        for rcode in row_codes:
-            for col, num in zip(cols, col_nums):
+        # 各行を別々に columns で作る
+        for rcode, rlabel in zip(row_codes, row_labels):
+            st.write(f"**{rlabel}**")
+            row_cols = st.columns(7)
+            for col, num in zip(row_cols, col_nums):
                 code = f"{num}{rcode}"
                 part = code_to_part[code]
                 if part.startswith("教室_A"):
