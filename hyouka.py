@@ -308,7 +308,7 @@ def main():
     col_labels  = ["受付","腕前審査","料理","包丁","製菓","調理","盛付"]
     col_nums    = list(range(1, 8))
 
-    st.markdown("### レベル入力（ここで次に上げる部品と所持玉龍幣も指定）")
+    st.markdown("### レベル入力")
     with st.form("level_form"):
         # 列ヘッダー
         header_cols = st.columns(7)
@@ -407,7 +407,7 @@ def main():
     st.table(df_dist)
 
     # 次のレベルアップ試算（フォーム内で選択した値を使う）
-    st.markdown("## 次のレベルアップ試算（フォームで指定済み）")
+    st.markdown("## 次のレベルアップ試算")
     part_to_upgrade = part_choice_internal
     current_coins = int(current_coins)
 
@@ -424,7 +424,7 @@ def main():
         else:
             arrival_dt = arrival_time_from_minutes(minutes_ceiled)
             # arrival_dt は JST の tz-aware datetime
-            st.write(f"- 到達予定時刻（日本時間）: {arrival_dt.strftime('%Y-%m-%d %H:%M')}")
+            st.write(f"- 到達予定時刻: {arrival_dt.strftime('%Y-%m-%d %H:%M')}")
             remaining_hours = minutes_ceiled // 60
             remaining_minutes = minutes_ceiled % 60
             st.write(f"- 残り時間: {remaining_hours}時間{remaining_minutes}分")
