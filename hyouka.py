@@ -1,7 +1,7 @@
 # main.py
 """
-水準評価モード専用アプリケーション（エクスパンダ版）
-- 部品レベル入力を 2行×7列 のプルダウンで行う（各行は Expander で折りたたみ）
+水準評価モード専用アプリケーション（転置レイアウト）
+- 部品レベル入力を 7行×2列 のプルダウンで行う（各行は「カテゴリ」「教師」「席」）
 - 各サイクルで得られる reward_table の報酬名別確率分布を表で表示
 - 次に上げたい部品と現在の玉龍幣残高を評価前に入力できる（表示は 列_行）
 - 到達予定時刻は日本時間（JST）で表示
@@ -275,41 +275,59 @@ def main():
 
     risk = st.sidebar.number_input("リスク調整係数 (-r)", min_value=0.0, max_value=2.0, value=1.0, step=0.01)
 
-    row_labels  = ["教師", "席"]
-    row_codes   = ["a",   "b"]
-    col_labels  = ["受付","腕前審査","料理","包丁","製菓","調理","盛付"]
-    col_nums    = list(range(1, 8))
+    # 転置レイアウト用ラベル
+    col_labels = ["受付","腕前審査","料理","包丁","製菓","調理","盛付"]
+    row_label_map = {"a": "教師", "b": "席"}
 
-    st.markdown("### レベル入力（各行は折りたたみ可能）")
+    st.markdown("### レベル入力（転置レイアウト：各行にカテゴリ＋教師＋席）")
     with st.form("level_form"):
-        # 列ヘッダー（固定表示）
-        header_cols = st.columns(7)
-        for col, lbl in zip(header_cols, col_labels):
-            col.markdown(f"**{lbl}**")
-
         level_inputs: Dict[str, int] = {}
 
-        # 各行を Expander で折りたたむ（スマホで見やすくなる）
-        for rcode, rlabel in zip(row_codes, row_labels):
-            # 教師行はデフォルトで展開、席は折りたたみ
-            expanded_default = (rcode == "a")
-            with st.expander(rlabel, expanded=expanded_default):
-                row_cols = st.columns(7)
-                for col, num in zip(row_cols, col_nums):
-                    code = f"{num}{rcode}"
-                    part = code_to_part.get(code, "教室_A1")
-                    if part.startswith("教室_A"):
-                        key = "教室_A"
-                    elif part.startswith("教室_B"):
-                        key = "教室_B"
-                    else:
-                        key = part
-                    max_lv = max(it.get("level", 1) for it in upgrade_info[key])
-                    lvl = col.selectbox("", options=list(range(1, max_lv+1)), index=0, key=code, label_visibility="collapsed")
-                    level_inputs[code] = lvl
+        # 各カテゴリごとに一行を作り、横に教師/席を並べる
+        for i, col_label in enumerate(col_labels, start=1):
+            # 3カラム：カテゴリ名（幅広め）・教師・席
+            c1, c2, c3 = st.columns([1.5, 1, 1])
+            # カテゴリ名を左に表示
+            c1.markdown(f"**{col_label}**")
+            # 教師（行コード 'a'）
+            code_a = f"{i}a"
+            part_a = code_to_part.get(code_a, "教室_A1")
+            if part_a.startswith("教室_A"):
+                key_a = "教室_A"
+            elif part_a.startswith("教室_B"):
+                key_a = "教室_B"
+            else:
+                key_a = part_a
+            max_lv_a = max(it.get("level", 1) for it in upgrade_info[key_a])
+            lvl_a = c2.selectbox(
+                f"{col_label}_教師",
+                options=list(range(1, max_lv_a+1)),
+                index=0,
+                key=code_a,
+                label_visibility="collapsed"
+            )
+            level_inputs[code_a] = lvl_a
+
+            # 席（行コード 'b'）
+            code_b = f"{i}b"
+            part_b = code_to_part.get(code_b, "教室_B1")
+            if part_b.startswith("教室_A"):
+                key_b = "教室_A"
+            elif part_b.startswith("教室_B"):
+                key_b = "教室_B"
+            else:
+                key_b = part_b
+            max_lv_b = max(it.get("level", 1) for it in upgrade_info[key_b])
+            lvl_b = c3.selectbox(
+                f"{col_label}_席",
+                options=list(range(1, max_lv_b+1)),
+                index=0,
+                key=code_b,
+                label_visibility="collapsed"
+            )
+            level_inputs[code_b] = lvl_b
 
         # 次に上げたい部品と所持玉龍幣をフォーム内で指定（表示は 列_行）
-        row_label_map = {"a": "教師", "b": "席"}
         display_map: Dict[str, str] = {}
         part_options_internal: List[str] = []
         for code in sorted(level_inputs.keys()):
@@ -339,8 +357,13 @@ def main():
     if not submitted:
         return
 
-    # 入力確認
-    data = [[level_inputs.get(f"{num}{rcode}", 1) for num in col_nums] for rcode in row_codes]
+    # 入力確認（転置なので表は元の 2x7 形式で表示）
+    col_nums = list(range(1, 8))
+    row_labels = ["教師", "席"]
+    data = [
+        [level_inputs.get(f"{num}{rcode}", 1) for num in col_nums]
+        for rcode in ["a", "b"]
+    ]
     df_input = pd.DataFrame(data, index=row_labels, columns=col_labels)
     st.markdown("#### 入力内容")
     st.table(df_input)
